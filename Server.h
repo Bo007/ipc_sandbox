@@ -3,11 +3,14 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#include <cstring>
+#include <functional>
 #include <iostream>
-#include <vector>
 #include <numeric>
 #include <string>
-#include <functional>
+#include <vector>
+
+#include "ServerSettings.h"
 
 // TODO: server should have process request method and return std::future with related data
 // for this we have to maintain a map with names and methods
@@ -19,11 +22,19 @@ class Server
 {
 public:
 
-    Server(int inputHandle, int outputHandle)
-        : m_inputHandle(inputHandle)
-        , m_outputHandle(outputHandle)
+    Server()
     {
+        unlink(FIFO_FILENAME.c_str());
+
+        createFifo(FIFO_FILENAME.c_str());
+        m_fifoHanlde = openFifo(FIFO_FILENAME.c_str(), O_RDWR);
+
         printf("Server pid: %d\t parentpid: %d\n", getpid(), getppid());
+    }
+
+    ~Server()
+    {
+        unlink(FIFO_FILENAME.c_str());
     }
 
     template<class Type>
@@ -41,7 +52,8 @@ public:
 
     void recieveDataFromClient()
     {
-        read(m_inputHandle, m_inputBuff.data(), m_inputBuff.size());
+        std::cout<<"recieveDataFromClient waiting " << std::endl;
+        read(m_fifoHanlde, m_inputBuff.data(), m_inputBuff.size());
         std::cout<<"Data from the Client: " << m_inputBuff.data() << std::endl;
     }
 
@@ -56,14 +68,30 @@ public:
     void sendDataToClient()
     {
         std::cout<<"Data to the Client: " << m_inputBuff.data() << std::endl;
-        write(m_outputHandle, m_inputBuff.data(), m_inputBuff.size());
+        write(m_fifoHanlde, m_inputBuff.data(), m_inputBuff.size());
         wait(NULL);
     }
 
+    void reopenFifo()
+    {
+        std::cout << "reopenFifo" << std::endl;
+        close(m_fifoHanlde);
+        m_fifoHanlde = openFifo(FIFO_FILENAME.c_str(), O_RDWR);
+        std::memset(m_inputBuff.data(), 0, m_inputBuff.size());
+    }
+private:
+    void createFifo(const char* filename)
+    {
+        int error = mkfifo(filename, 0666);
+        if (-1 == error)
+        {
+            fprintf(stderr, "Can't create fifo\n");
+            exit(0);
+        }
+    }
 
 private:
-    int m_inputHandle;
-    int m_outputHandle;
+    int m_fifoHanlde;
 
     static constexpr int BUFFER_SIZE = 1024;
     std::array<char, BUFFER_SIZE> m_inputBuff;
