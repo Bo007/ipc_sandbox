@@ -5,10 +5,7 @@ int main()
     Server server;
     while (true)
     {
-        server.recieveDataFromClient();
-        server.processData();
-        server.sendDataToClient();
-        server.reopenFifo();
+        server.processMessage();
     }
     return 0;
 }

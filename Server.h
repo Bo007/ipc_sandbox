@@ -29,7 +29,8 @@ public:
         createFifo(FIFO_FILENAME.c_str());
         m_fifoHanlde = openFifo(FIFO_FILENAME.c_str(), O_RDWR);
 
-        printf("Server pid: %d\t parentpid: %d\n", getpid(), getppid());
+        m_pid = getpid();
+        printf("Server pid: %d\t parentpid: %d\n", m_pid, getppid());
     }
 
     ~Server()
@@ -37,6 +38,55 @@ public:
         unlink(FIFO_FILENAME.c_str());
     }
 
+    void processMessage()
+    {
+        int byteNum = read(m_fifoHanlde, m_messageBuffer.data(), m_messageBuffer.size());
+        if (byteNum == -1)
+        {
+            std::cout << "read was interrupted due to a signal.\n";
+            return;
+        }
+
+        std::cout<<"processMessage " << m_messageBuffer.data() << std::endl;
+        auto result = getMessage(m_messageBuffer.data());
+
+        switch (std::get<0>(result))
+        {
+        case MESSAGE::connect:
+        {
+            const std::string msg = std::string("[") + kMessageMap.at(MESSAGE::connect) + "][" + std::to_string(m_pid) + "]";
+            writeData(msg.data(), msg.size(), std::get<1>(result));
+            break;
+        }
+        case MESSAGE::call_method:
+        {
+            convertStringToUpperCase(std::get<1>(result));
+            break;
+        }
+        case MESSAGE::waiting:
+        {
+            break;
+        }
+        case MESSAGE::not_found:
+        {
+            break;
+        }
+        case MESSAGE::unknown_client:
+        {
+            break;
+        }
+        case MESSAGE::unknown_error:
+        {
+            break;
+        }
+        default:
+            break;
+        }
+
+        std::memset(m_messageBuffer.data(), 0, m_messageBuffer.size());
+    }
+
+private:
     template<class Type>
     Type processArraySum(const std::vector<Type>& data)
     {
@@ -50,26 +100,26 @@ public:
         return result;
     }
 
-    void recieveDataFromClient()
+    void convertStringToUpperCase(int processId)
     {
-        std::cout<<"recieveDataFromClient waiting " << std::endl;
-        read(m_fifoHanlde, m_inputBuff.data(), m_inputBuff.size());
-        std::cout<<"Data from the Client: " << m_inputBuff.data() << std::endl;
-    }
+        std::memset(m_messageBuffer.data(), 0, m_messageBuffer.size());
+        std::cout<< "waiting data from client" << std::endl;
+        int byteNum = read(m_fifoHanlde, m_messageBuffer.data(), m_messageBuffer.size());
+        if (byteNum == -1)
+        {
+            std::cout << "read was interrupted due to a signal.\n";
+            return;
+        }
+        std::cout<<"Data from the Client: " << m_messageBuffer.data() << std::endl;
 
-    void processData()
-    {
-        std::string str(std::begin(m_inputBuff), std::end(m_inputBuff));
+        std::string str(std::begin(m_messageBuffer), std::begin(m_messageBuffer) + byteNum);
+        std::memset(m_messageBuffer.data(), 0, m_messageBuffer.size());
+
         std::string buff = toUpperCase(str);
-        std::memcpy(m_inputBuff.data(),  buff.data(), buff.size());
-    }
+        std::memcpy(m_messageBuffer.data(), buff.data(), buff.size());
 
-
-    void sendDataToClient()
-    {
-        std::cout<<"Data to the Client: " << m_inputBuff.data() << std::endl;
-        write(m_fifoHanlde, m_inputBuff.data(), m_inputBuff.size());
-        wait(NULL);
+        std::cout<<"Data to the Client: " << m_messageBuffer.data() << std::endl;
+        writeData(m_messageBuffer.data(), m_messageBuffer.size(), processId);
     }
 
     void reopenFifo()
@@ -77,8 +127,10 @@ public:
         std::cout << "reopenFifo" << std::endl;
         close(m_fifoHanlde);
         m_fifoHanlde = openFifo(FIFO_FILENAME.c_str(), O_RDWR);
-        std::memset(m_inputBuff.data(), 0, m_inputBuff.size());
+        std::memset(m_messageBuffer.data(), 0, m_messageBuffer.size());
     }
+
+
 private:
     void createFifo(const char* filename)
     {
@@ -90,9 +142,14 @@ private:
         }
     }
 
-private:
-    int m_fifoHanlde;
+    void writeData(const char* data, size_t size, int processId)
+    {
+        write(m_fifoHanlde, data, size);
+        waitid(processId);
+    }
 
-    static constexpr int BUFFER_SIZE = 1024;
-    std::array<char, BUFFER_SIZE> m_inputBuff;
+private:
+    int m_pid;
+    int m_fifoHanlde;
+    std::array<char, BUFFER_SIZE> m_messageBuffer;
 };
